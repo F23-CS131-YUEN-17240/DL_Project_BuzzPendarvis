@@ -1,0 +1,37 @@
+ -- MOST OF THIS IS NOT IMPLEMENTED --
+
+ADD D, S, T     ; Adds data from S and T and stores the result in D
+SUB D, S, T     ; Subtracts ^
+NAND D, S, T    ; NANDs ^
+NOR D, S, T     ; NORs ^
+
+LDI D, i8       ; Loads register D with sign-extended 8-bit immediate
+LDUI D, u8      ; Loads register D with zero-extended 8-bit immediate
+LDLI D, u8      ; Loads the lower half of D with 8-bit immediate
+LDHI D, u8      ; Loads the upper half of D with 8-bit immediate
+
+STR S, T, i4    ; Stores data S into address (T + i4)
+LDM D, T, i4    ; Loads data into D from address (T + i4)
+
+BEQ S, T        ; Branches to T if S meets condition relative to zero
+BNE S, T
+BLT S, T
+BLE S, T
+BGT S, T
+BGE S, T
+
+JMP T           ; Jumps to address T
+JAL T           ; Jumps to address T and loads current PC into r15
+JMPI u12        ; Loads immediate into lower 12 bits of address
+JALI u12        ; Loads immediate into lower 12 bits of address and loads current pc into r15
+
+ALU : 00OODDDDTTTTSSSS
+
+LDI : 01OODDDDIIIIIIII
+
+STR : 1000IIIITTTTSSSS
+LDM : 1001DDDDTTTTIIII
+BRR : 1010xOOOTTTTSSSS
+
+JMP : 110OIIIIIIIIIIII
+JMPI: 111OxxxxTTTTxxxx
