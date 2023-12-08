@@ -2,6 +2,10 @@
 
 #include <iostream>
 
+// helper functions, to make things prettier
+void execOldest(Exec &ex, ResStation rs[], Rob rob);
+void setIfOlder(Exec *&toSet, Exec &check, Rob &rob);
+
 void Cpu::reset() {
     pc = 0;
     reg[0] = 0;
@@ -12,27 +16,23 @@ void Cpu::reset() {
     for (int i = 0; i < 4; i++) movRss[i].busy = false;
     for (int i = 0; i < 3; i++) jmpRss[i].busy = false;
     cdb.tag = 0;
-    dispatched = true;
+    jmpExec = Exec(4);
+    movExec = Exec(1);
+    aguExec = Exec(4);
+    aluExec = Exec(5);
+    uopIsValid = false;
+    uopWasDispatched = true;
 }
 
 void Cpu::step() {
+    writeback();
+    execute();
+    dispatch();
+    
     fetch();
     decode();
-    dispatch();
-    execute(); 
-    writeback();
-    fetch();
-    decode();
-    dispatch();
-    writeback();
-    fetch();
-    decode();
-    dispatch();
-    writeback();
-    fetch();
-    decode();
-    dispatch();
-    writeback();
+
+    std::cout << std::endl;
 }
 
 word Cpu::getPc() {
@@ -40,11 +40,12 @@ word Cpu::getPc() {
 }
 
 void Cpu::fetch() {
-    if (!dispatched) return;
-    fetched = memory[pc++]; 
-    dispatched = false;
+    fetched = memory[pc];
 }
+
 void Cpu::decode() {
+    if (!uopWasDispatched) return;
+
     Ctrl uop;
     uop.address = pc;
 
@@ -131,97 +132,74 @@ void Cpu::decode() {
         break;
     }
 
+    uopIsValid = true;
+    uopWasDispatched = false;
     decoded = uop;
-    dispatched = false;
 }
 
 void Cpu::dispatch() {
-    if (rob.isFull()) return;
-    if (dispatched) return;
+    if (rob.isFull() | !uopIsValid) return;
+
     switch (decoded.resourceid) {
     case 0: // JMP
         for (int i = 0; i < 3; i++) {
-            if (!aluRss[i].busy) {
-                JmpRs rs;
+            if (!jmpRss[i].busy) {
                 RobEntry robe;
-
-                rs.busy = true;
-                rs.op = decoded.op;
-                rs.addr = decoded.address;
-                rs.immediate = decoded.immediate;
-                rs.qj = rat[decoded.s];
-                rs.qk = rat[decoded.t];
-                rs.vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
-                rs.vj = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
-
-                rs.jumpNotBranch = decoded.jumpNotBranch;
-
                 robe.dest = 0;
                 robe.destIsAddr = false;
                 robe.ready = false;
                 robe.result = 0;
-
                 rob.enqueue(robe);
-                rs.tag = rob.tail;
+
+                JmpRs rs = JmpRs(decoded, rob.tail, reg, rat);
                 jmpRss[i] = rs;
-                dispatched = true;
+
+                pc++; // move on to next instruction
+                uopIsValid = false;
+                uopWasDispatched = true;
                 break;
             }
         }
         break;
     case 1: // MOV
         for (int i = 0; i < 4; i++) {
-            if (!aluRss[i].busy) {
-                MovRs rs;
+            if (!movRss[i].busy) {
                 RobEntry robe;
-
-                rs.busy = true;
-                rs.qj = 0;
-                rs.qk = rat[decoded.t];
-                rs.vj = decoded.immediate;
-                rs.vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
-                rs.write8b = decoded.write8b;
-                rs.writeHi = decoded.writeHi;
-
                 robe.dest = decoded.d;
                 robe.destIsAddr = false;
                 robe.ready = false;
                 robe.result = 0;
-
                 rob.enqueue(robe);
-                rs.tag = rob.tail;
+
+                MovRs rs = MovRs(decoded, rob.tail, reg, rat);
                 movRss[i] = rs;
                 
                 if (decoded.d != 0) rat[decoded.d] = rs.tag;
-                dispatched = true;
+                pc++; // move on to next instruction
+                uopIsValid = false;
+                uopWasDispatched = true;
                 break;
             }
         }
         break;
     case 2: // AGU
         for (int i = 0; i < 4; i++) {
-            if (!aluRss[i].busy) {
-                AguRs rs;
+            if (!aguRss[i].busy) {
                 RobEntry robe;
-
-                rs.busy = true;
-                rs.qj = rat[decoded.s];
-                rs.qk = rat[decoded.t];
-                rs.vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
-                rs.vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
-                rs.write = bool(decoded.op);
-
                 robe.dest = decoded.op ? 0 : decoded.d;
                 robe.destIsAddr = bool(decoded.op);
                 robe.ready = false;
                 robe.result = 0;
-
                 rob.enqueue(robe);
+
+                AguRs rs = AguRs(decoded, rob.tail, reg, rat);
                 rs.tag = rob.tail;
                 aguRss[i] = rs;
                 
                 if (decoded.d != 0) rat[decoded.d] = rs.tag;
-                dispatched = true;
+                pc++; // move on to next instruction
+                uopIsValid = false;
+                uopWasDispatched = true;
                 break;
             }
         }
@@ -229,27 +207,21 @@ void Cpu::dispatch() {
     case 3: // ALU
         for (int i = 0; i < 4; i++) {
             if (!aluRss[i].busy) {
-                AluRs rs;
                 RobEntry robe;
-
-                rs.busy = true;
-                rs.op = decoded.op;
-                rs.qj = rat[decoded.s];
-                rs.qk = rat[decoded.t];
-                rs.vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
-                rs.vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
-
                 robe.dest = decoded.d;
                 robe.destIsAddr = false;
                 robe.ready = false;
                 robe.result = 0;
-
                 rob.enqueue(robe);
+
+                AluRs rs = AluRs(decoded, decoded.d, reg, rat);
                 rs.tag = rob.tail;
                 aluRss[i] = rs;
 
                 if (decoded.d != 0) rat[decoded.d] = rs.tag;
-                dispatched = true;
+                pc++; // move on to next instruction
+                uopIsValid = false;
+                uopWasDispatched = true;
                 break;
             }
         }
@@ -258,110 +230,52 @@ void Cpu::dispatch() {
 }
 
 void Cpu::execute() {
-
+    // reservation station listening step
     if (cdb.tag != 0) for (int i = 0; i < 4; i++) {
-        if (aluRss[i].qj == cdb.tag) {
-            aluRss[i].qj = 0;
-            aluRss[i].vj = cdb.value;
-        }
-        if (aluRss[i].qk == cdb.tag) {
-            aluRss[i].qk = 0;
-            aluRss[i].vk = cdb.value;
-        }
-        if (aguRss[i].qj == cdb.tag) {
-            aguRss[i].qj = 0;
-            aguRss[i].vj = cdb.value;
-        }
-        if (aguRss[i].qk == cdb.tag) {
-            aguRss[i].qk = 0;
-            aguRss[i].vk = cdb.value;
-        }
-        if (movRss[i].qj == cdb.tag) {
-            aguRss[i].qj = 0;
-            aguRss[i].vj = cdb.value;
-        }
-        if (movRss[i].qk == cdb.tag) {
-            movRss[i].qk = 0;
-            movRss[i].vk = cdb.value;
-        }
-
-        if (i > 2) continue;
-
-        if (jmpRss[i].qj == cdb.tag) {
-            jmpRss[i].qj = 0;
-            jmpRss[i].vj = cdb.value;
-        }
-        if (jmpRss[i].qk == cdb.tag) {
-            jmpRss[i].qk = 0;
-            jmpRss[i].vk = cdb.value;
-        }
+        if (i <= 2) jmpRss[i].update(cdb);
+        movRss[i].update(cdb);
+        aguRss[i].update(cdb);
+        aluRss[i].update(cdb);
     }
 
-    int movix = -1;
-    word movResult = 0;
-    int aluix = -1;
-    word aluResult = 0;
+    // steps should occur every clock cycle
+    if (jmpExec.isBusy()) jmpExec.step();
+    if (movExec.isBusy()) movExec.step();
+    if (aguExec.isBusy()) aguExec.step();
+    if (aluExec.isBusy()) aluExec.step();
 
-    for (int i = 0; i < 4; i++) {
-        if (movRss[i].busy && movRss[i].qj == 0 && movRss[i].qk == 0) {
-            if (movRss[i].write8b) {
-                std::cout << "MOV NOT YET IMPLEMENTED" << std::endl;
-                exit(-1);
-            } else {
-                std::cout << "LDI " << movRss[i].vj << std::endl;
-                movResult = movRss[i].vj;
-            }
-            movix = i;
-            break;
-        }
-    }
-    for (int i = 0; i < 4; i++) {
-        if (aluRss[i].busy && aluRss[i].qj == 0 && aluRss[i].qk == 0) {
-            switch (aluRss[i].op) {
-            case 0:
-                std::cout << "ADD " << aluRss[i].vj << " + " << aluRss[i].vk << std::endl;
-                aluResult = aluRss[i].vj + aluRss[i].vk;
-                break;
-            case 1:
-                std::cout << "SUB " << aluRss[i].vj << " - " << aluRss[i].vk << std::endl;
-                aluResult = aluRss[i].vj - aluRss[i].vk;
-                break;
-            case 2:
-                std::cout << "NAND " << aluRss[i].vj << " ~& " << aluRss[i].vk << std::endl;
-                aluResult = ~(aluRss[i].vj & aluRss[i].vk);
-                break;
-            case 3:
-                std::cout << "NOR " << aluRss[i].vj << " ~| " << aluRss[i].vk << std::endl;
-                aluResult = ~(aluRss[i].vj | aluRss[i].vk);
-                break;
-            }
-            aluix = i;
-            break;
-        }
-    }
 
-    int movTag = (movix >= 0) ? movRss[movix].tag : 0;
-    int aluTag = (aluix >= 0) ? aluRss[aluix].tag : 0;
-    movTag += (movTag < rob.head) * 16;
-    aluTag += (aluTag < rob.head) * 16;
+    // prioritize older instructions by
+    // searching for the oldest one by its
+    // ROB tag. (ix = -1 default / none ready)
+    
+    // Begin executing oldest ready instructions.
+    //execOldest(jmpExec, jmpRss, rob);
+    execOldest(movExec, movRss, rob);
+    //execOldest(aguExec, aguRss, rob);
+    execOldest(aluExec, aluRss, rob);
 
-    if (aluTag < movTag) {
-        cdb.tag = aluRss[aluix].tag;
-        cdb.value = aluResult;
-        aluRss[aluix].busy = false;
-    } else if (aluTag > movTag) {
-        cdb.tag = movRss[movix].tag;
-        cdb.value = movResult;
-        movRss[movix].busy = false;
+    // Writeback the oldest available result
+    Exec *toWb = nullptr;
+    //setIfOlder(toWb, jmpExec, rob);
+    setIfOlder(toWb, movExec, rob);
+    //setIfOlder(toWb, aguExec, rob);
+    setIfOlder(toWb, aluExec, rob);
+
+    if (toWb != nullptr) {
+        cdb = toWb->getVal();
+        std::cout << "WRITEBACK: ";
+        toWb->getInstr()->print();
+        toWb->reset();
     } else {
         cdb.tag = 0;
-        cdb.value = 0;
     }
 }
+
 void Cpu::writeback() {
     // update ROB
     if (cdb.tag != 0) {
-        //std::cout << "CDB " << cdb.value << " @" << int(cdb.tag) << std::endl;
+        std::cout << "CDB " << cdb.value << " @" << int(cdb.tag) << std::endl;
         rob.rob[cdb.tag].result = cdb.value;
         rob.rob[cdb.tag].ready = true;
     }
@@ -380,34 +294,30 @@ void Cpu::writeback() {
     }
 }
 
-// ROB
+void execOldest(Exec &ex, ResStation rs[], Rob rob) {
+    if (!ex.isBusy()){
+        int ix = -1; // keeps track of current oldest found
+        for (int i = 0; i < 4; i++) {
+            if (!rs[i].ready()) continue; // skip if not ready
 
-void Cpu::Rob::reset() {
-    head = 2;
-    tail = 1;
-    for (int i = 0; i < 16; i++) rob[i].ready = false;
-    empty = true;
-    full = false;
+            if (ix == -1) ix = i;
+            else {
+                uint8_t t1 = rob.tagc(rs[ix].tag);
+                uint8_t t2 = rob.tagc(rs[i].tag);
+                ix = (t1 < t2) ? ix : i;
+            }
+        }
+        if (ix != -1) ex.startInstr(&rs[ix]);
+    }
 }
-bool Cpu::Rob::isFull() {
-    return full;
-}
-bool Cpu::Rob::isEmpty() {
-    return empty;
-}
-bool Cpu::Rob::isReady() {
-    return !isEmpty() && rob[head].ready;
-}
-void Cpu::Rob::enqueue(Cpu::RobEntry in) {
-    tail = std::max(1, (tail + 1) & 0xF);
-    rob[tail] = in;
-    empty = false;
-    if (std::max(1, (head + 1) & 0xF) == tail) full = true;
-}
-Cpu::RobEntry Cpu::Rob::dequeue() {
-    RobEntry out = rob[head];
-    head = std::max(1, (head + 1) & 0xF);
-    full = false;
-    if (std::max(1, (head + 1) & 0xF) == tail) empty = true;
-    return out;
-}
+
+void setIfOlder(Exec *&toSet, Exec &check, Rob &rob) {
+    if (check.valIsReady()) {
+        if (
+            toSet == nullptr
+            || (rob.tagc(toSet->getVal().tag) < rob.tagc(check.getVal().tag))
+        ) {
+            toSet = &check;
+        }
+    }
+} 
