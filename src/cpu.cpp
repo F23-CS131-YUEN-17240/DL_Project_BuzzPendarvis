@@ -31,8 +31,6 @@ void Cpu::step() {
     
     fetch();
     decode();
-
-    std::cout << std::endl;
 }
 
 word Cpu::getPc() {
@@ -151,7 +149,7 @@ void Cpu::dispatch() {
                 robe.result = 0;
                 rob.enqueue(robe);
 
-                JmpRs rs = JmpRs(decoded, rob.tail, reg, rat);
+                JmpRs rs = JmpRs(decoded, rob, reg, rat);
                 jmpRss[i] = rs;
 
                 pc++; // move on to next instruction
@@ -171,7 +169,7 @@ void Cpu::dispatch() {
                 robe.result = 0;
                 rob.enqueue(robe);
 
-                MovRs rs = MovRs(decoded, rob.tail, reg, rat);
+                MovRs rs = MovRs(decoded, rob, reg, rat);
                 movRss[i] = rs;
                 
                 if (decoded.d != 0) rat[decoded.d] = rs.tag;
@@ -192,7 +190,7 @@ void Cpu::dispatch() {
                 robe.result = 0;
                 rob.enqueue(robe);
 
-                AguRs rs = AguRs(decoded, rob.tail, reg, rat);
+                AguRs rs = AguRs(decoded, rob, reg, rat);
                 rs.tag = rob.tail;
                 aguRss[i] = rs;
                 
@@ -214,7 +212,7 @@ void Cpu::dispatch() {
                 robe.result = 0;
                 rob.enqueue(robe);
 
-                AluRs rs = AluRs(decoded, decoded.d, reg, rat);
+                AluRs rs = AluRs(decoded, rob, reg, rat);
                 rs.tag = rob.tail;
                 aluRss[i] = rs;
 
@@ -264,7 +262,7 @@ void Cpu::execute() {
 
     if (toWb != nullptr) {
         cdb = toWb->getVal();
-        std::cout << "WRITEBACK: ";
+        std::cout << "Finished: ";
         toWb->getInstr()->print();
         toWb->reset();
     } else {
@@ -275,7 +273,7 @@ void Cpu::execute() {
 void Cpu::writeback() {
     // update ROB
     if (cdb.tag != 0) {
-        std::cout << "CDB " << cdb.value << " @" << int(cdb.tag) << std::endl;
+        //std::cout << "CDB " << cdb.value << " @" << int(cdb.tag) << std::endl;
         rob.rob[cdb.tag].result = cdb.value;
         rob.rob[cdb.tag].ready = true;
     }
@@ -285,7 +283,7 @@ void Cpu::writeback() {
 
     RobEntry robe = rob.dequeue();
 
-    //std::cout << "Writing " << robe.result << " to r" << robe.dest << std::endl;
+    std::cout << "Writing " << robe.result << " to r" << robe.dest << std::endl;
 
     if (robe.destIsAddr) memory[robe.dest] = robe.result;
     else {

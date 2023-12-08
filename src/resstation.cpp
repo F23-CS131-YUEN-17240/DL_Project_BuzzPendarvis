@@ -11,7 +11,7 @@ void ResStation::print() {
     else std::cout << " (" << int(qj) << ") ";
     if (qk == 0) std::cout << vk << " ";
     else std::cout << " (" << int(qk) << ") ";
-    std::cout << busy << std::endl;
+    std::cout << std::endl;
 }
 bool ResStation::ready() {
     return (busy && qj == 0 && qk == 0);
@@ -28,7 +28,7 @@ void ResStation::update(Cdb cdb) {
 }
 
 // Constructors
-JmpRs::JmpRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]) {
+JmpRs::JmpRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]) {
     busy = true;
     op = decoded.op;
     addr = decoded.address;
@@ -38,9 +38,9 @@ JmpRs::JmpRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]) {
     vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
     vj = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
     jumpNotBranch = decoded.jumpNotBranch;
-    this->tag = tag;
+    this->tag = rob.tail;
 }
-MovRs::MovRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]) {
+MovRs::MovRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]) {
     busy = true;
     qj = 0;
     qk = rat[decoded.t];
@@ -48,25 +48,35 @@ MovRs::MovRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]) {
     vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
     write8b = decoded.write8b;
     writeHi = decoded.writeHi;
-    this->tag = tag;
+    this->tag = rob.tail;
 }
-AguRs::AguRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]) {
+AguRs::AguRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]) {
     busy = true;
     qj = rat[decoded.s];
     qk = rat[decoded.t];
     vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
     vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
     write = bool(decoded.op);
-    this->tag = tag;
+    this->tag = rob.tail;
 }
-AluRs::AluRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]) {
+AluRs::AluRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]) {
     busy = true;
     op = decoded.op;
-    qj = rat[decoded.s];
-    qk = rat[decoded.t];
-    vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
-    vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
-    this->tag = tag;
+    if (rob.rob[rat[decoded.s]].ready) {
+        qj = 0;
+        vj = rob.rob[rat[decoded.s]].result;
+    } else {
+        qj = rat[decoded.s];
+        vj = rat[decoded.s] ? rat[decoded.s] : reg[decoded.s];
+    }
+    if (rob.rob[rat[decoded.t]].ready) {
+        qk = 0;
+        vk = rob.rob[rat[decoded.t]].result;
+    } else {
+        qk = rat[decoded.t];
+        vk = rat[decoded.t] ? rat[decoded.t] : reg[decoded.t];
+    }
+    this->tag = rob.tail;
 }
 
 
@@ -78,8 +88,7 @@ word JmpRs::execute() {
 }
 word MovRs::execute() {
     if (write8b) {
-        std::cout << "MOV NOT YET IMPLEMENTED" << std::endl;
-        exit(-1);
+        return writeHi ? (vk & 0x0F) | vj : (vk & 0xF) | (vj << 8);
     } else {
         return vj;
     }
@@ -125,6 +134,19 @@ void AguRs::print() {
     ResStation::print();
 }
 void AluRs::print() {
-    std::cout << "ALU ";
+    switch (op) {
+    case 0:
+        std::cout << "ADD ";
+        break;
+    case 1:
+        std::cout << "SUB ";
+        break;
+    case 2:
+        std::cout << "NAND ";
+        break;
+    case 3:
+        std::cout << "NOR ";
+        break;
+    }
     ResStation::print();
 }

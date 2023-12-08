@@ -20,7 +20,7 @@ public:
 class JmpRs : public ResStation {
 public:
     JmpRs() {}
-    JmpRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]);
+    JmpRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]);
     word immediate;
     uint8_t op;
     bool jumpNotBranch;
@@ -32,7 +32,7 @@ public:
 class MovRs : public ResStation {
 public:
     MovRs() {}
-    MovRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]);
+    MovRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]);
     bool write8b;
     bool writeHi;
 
@@ -43,7 +43,7 @@ public:
 class AguRs : public ResStation {
 public:
     AguRs() {}
-    AguRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]);
+    AguRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]);
     bool write;
 
     virtual word execute();
@@ -53,7 +53,7 @@ public:
 class AluRs : public ResStation {
 public:
     AluRs() {}
-    AluRs(Ctrl decoded, uint8_t tag, word reg[], uint8_t rat[]);
+    AluRs(Ctrl decoded, Rob &rob, word reg[], uint8_t rat[]);
     uint8_t op;
 
     virtual word execute();
