@@ -281,6 +281,7 @@ void Cpu::writeback() {
     // commit
     if (!rob.isReady()) return;
 
+    uint8_t dqFrom = rob.head;
     RobEntry robe = rob.dequeue();
 
     std::cout << "Writing " << robe.result << " to r" << robe.dest << std::endl;
@@ -288,7 +289,7 @@ void Cpu::writeback() {
     if (robe.destIsAddr) memory[robe.dest] = robe.result;
     else {
         reg[robe.dest] = robe.result;
-        rat[robe.dest] = 0;
+        if (rat[robe.dest] == dqFrom) rat[robe.dest] = 0;
     }
 }
 
